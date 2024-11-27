@@ -72,7 +72,7 @@ type MetaData struct {
 
 func (service *DocService) GenerateHead(docID uint, pageId uint, pageType string) (string, error) {
 	var buffer bytes.Buffer
-	doc, err := service.GetDocumentation(docID)
+	doc, _, err := service.GetDocumentation(docID)
 
 	if err != nil {
 		return "", err
@@ -125,7 +125,7 @@ func (service *DocService) GenerateHead(docID uint, pageId uint, pageType string
 
 		return buffer.String(), nil
 	} else {
-		page, err := service.GetPage(pageId)
+		page, _, err := service.GetPage(pageId)
 		if err != nil {
 			return "", err
 		}
@@ -228,7 +228,7 @@ func (service *DocService) UpdateWriteBuild(docId uint) error {
 	allDocsPath := filepath.Join(config.ParsedConfig.DataPath, "rspress_data")
 	docsPath := filepath.Join(allDocsPath, "doc_"+strconv.Itoa(int(rootParentId)))
 
-	doc, err := service.GetDocumentation(docId)
+	doc, _, err := service.GetDocumentation(docId)
 	if err != nil {
 		return err
 	}
@@ -371,7 +371,7 @@ func (service *DocService) InitRsPress(docId uint) error {
 }
 
 func (service *DocService) StartUpdate(docId uint, rootParentId uint) (string, error) {
-	doc, err := service.GetDocumentation(docId)
+	doc, _, err := service.GetDocumentation(docId)
 	if err != nil {
 		return "", err
 	}
@@ -570,7 +570,7 @@ func (service *DocService) writePagesToDirectory(pages []models.Page, dirPath st
 	})
 
 	for _, page := range pages {
-		fullPage, err := service.GetPage(page.ID)
+		fullPage, _, err := service.GetPage(page.ID)
 		if err != nil {
 			return err
 		}
@@ -736,36 +736,36 @@ func writeMetaJSON(metaElements []MetaElement, dirPath string) error {
 	return nil
 }
 
-func (service *DocService) buildVersionTree(docId uint) ([]VersionInfo, error) {
-	doc, err := service.GetDocumentation(docId)
+func (service *DocService) buildVersionTree(docId uint) ([]VersionInfo, string, error) {
+	doc, errMsg, err := service.GetDocumentation(docId)
 	if err != nil {
-		return nil, err
+		return nil, errMsg, err
 	}
 
 	versionTree := []VersionInfo{{Version: doc.Version, CreatedAt: *doc.CreatedAt, DocId: doc.ID}}
 
-	childrenIds, err := service.GetChildrenOfDocumentation(docId)
-	if err != nil {
-		return nil, err
+	childrenIds, errMsg, err := service.GetChildrenOfDocumentation(docId)
+	if err != nil && errMsg != "" {
+		return nil, errMsg, err
 	}
 
 	for _, childId := range childrenIds {
-		childVersions, err := service.buildVersionTree(childId)
+		childVersions, errMsg, err := service.buildVersionTree(childId)
 		if err != nil {
-			return nil, err
+			return nil, errMsg, err
 		}
 		versionTree = append(versionTree, childVersions...)
 	}
 
-	return versionTree, nil
+	return versionTree, "", nil
 }
 
 func (service *DocService) WriteContents(docId uint, rootParentId uint, preHash string) error {
 	docIdPath := filepath.Join(config.ParsedConfig.DataPath, "rspress_data", "doc_"+strconv.Itoa(int(rootParentId)))
-	_, err := service.GetDocumentation(docId)
+	_, errMsg, err := service.GetDocumentation(docId)
 
-	if err != nil {
-		if err.Error() == "documentation_not_found" {
+	if err != nil && errMsg != "" {
+		if errMsg == "documentation_not_found" {
 			if err := utils.RemovePath(docIdPath); err != nil {
 				return err
 			}
@@ -781,16 +781,16 @@ func (service *DocService) WriteContents(docId uint, rootParentId uint, preHash 
 		}
 	}
 
-	versionInfos, err := service.buildVersionTree(rootParentId)
+	versionInfos, _, err := service.buildVersionTree(rootParentId)
 
 	if err != nil {
 		return err
 	}
 
 	for _, versionInfo := range versionInfos {
-		versionDoc, err := service.GetDocumentation(versionInfo.DocId)
+		versionDoc, errMsg, err := service.GetDocumentation(versionInfo.DocId)
 
-		if err != nil {
+		if err != nil && errMsg != "" {
 			return err
 		}
 

@@ -16,9 +16,10 @@ func TestGetUsers(t *testing.T) {
 		t.Fatal("TestAuthService is nil")
 	}
 
-	users, err := TestAuthService.GetUsers()
-	if err != nil {
-		t.Fatalf("GetUsers returned an error: %v", err)
+	users, errMsg, err := TestAuthService.GetUsers()
+	if err != nil && errMsg != "" {
+		t.Fatalf("GetUsers returned an error: %v: %v", errMsg, err)
+
 	}
 
 	expectedUsers := map[string]string{
@@ -55,9 +56,9 @@ func TestCreateJWT(t *testing.T) {
 	}
 
 	t.Run("Successful JWT Creation", func(t *testing.T) {
-		result, err := TestAuthService.CreateJWT("admin", "admin")
-		if err != nil {
-			t.Fatalf("Failed to create JWT: %v", err)
+		result, errMsg, err := TestAuthService.CreateJWT("admin", "admin")
+		if err != nil && errMsg != "" {
+			t.Fatalf("Failed to create JWT: %v: %v", errMsg, err)
 		}
 
 		// Check if all expected fields are present
@@ -87,16 +88,16 @@ func TestCreateJWT(t *testing.T) {
 	})
 
 	t.Run("Non-existent User", func(t *testing.T) {
-		_, err := TestAuthService.CreateJWT("nonexistent", "password")
-		if err == nil || err.Error() != "user_not_found" {
-			t.Errorf("Expected 'user_not_found' error, got %v", err)
+		_, errMsg, err := TestAuthService.CreateJWT("nonexistent", "password")
+		if err == nil || errMsg != "user_not_found" {
+			t.Errorf("Expected 'user_not_found' error, got: %v: %v", errMsg, err)
 		}
 	})
 
 	t.Run("Incorrect Password", func(t *testing.T) {
-		_, err := TestAuthService.CreateJWT("admin", "wrongpassword")
-		if err == nil || err.Error() != "invalid_password" {
-			t.Errorf("Expected 'invalid_password' error, got %v", err)
+		_, errMsg, err := TestAuthService.CreateJWT("admin", "wrongpassword")
+		if err == nil || errMsg != "invalid_password" {
+			t.Errorf("Expected 'invalid_password' error, got: %v: %v", errMsg, err)
 		}
 	})
 }
@@ -106,18 +107,18 @@ func TestVerifyTokenInDb(t *testing.T) {
 		t.Fatal("TestAuthService is nil")
 	}
 
-	createToken := func(username string) (string, error) {
-		result, err := TestAuthService.CreateJWT(username, username)
+	createToken := func(username string) (string, string, error) {
+		result, errMsg, err := TestAuthService.CreateJWT(username, username)
 		if err != nil {
-			return "", err
+			return "", errMsg, err
 		}
-		return result["token"].(string), nil
+		return result["token"].(string), "", nil
 	}
 
 	t.Run("Valid Token - Non-Admin", func(t *testing.T) {
-		token, err := createToken("user")
-		if err != nil {
-			t.Fatalf("Failed to create token: %v", err)
+		token, errMsg, err := createToken("user")
+		if err != nil && errMsg != "" {
+			t.Fatalf("Failed to create token: %v: %v", errMsg, err)
 		}
 
 		isValid := TestAuthService.VerifyTokenInDb(token, false)
@@ -127,9 +128,9 @@ func TestVerifyTokenInDb(t *testing.T) {
 	})
 
 	t.Run("Valid Token - Admin Check for Non-Admin", func(t *testing.T) {
-		token, err := createToken("user")
-		if err != nil {
-			t.Fatalf("Failed to create token: %v", err)
+		token, errMsg, err := createToken("user")
+		if err != nil && errMsg != "" {
+			t.Fatalf("Failed to create token: %v: %v", errMsg, err)
 		}
 
 		isValid := TestAuthService.VerifyTokenInDb(token, true)
@@ -139,9 +140,9 @@ func TestVerifyTokenInDb(t *testing.T) {
 	})
 
 	t.Run("Valid Token - Admin", func(t *testing.T) {
-		token, err := createToken("admin")
-		if err != nil {
-			t.Fatalf("Failed to create token: %v", err)
+		token, errMsg, err := createToken("admin")
+		if err != nil && errMsg != "" {
+			t.Fatalf("Failed to create token: %v: %v", errMsg, err)
 		}
 
 		isValid := TestAuthService.VerifyTokenInDb(token, true)
@@ -158,9 +159,9 @@ func TestVerifyTokenInDb(t *testing.T) {
 	})
 
 	t.Run("Expired Token", func(t *testing.T) {
-		token, err := createToken("user")
-		if err != nil {
-			t.Fatalf("Failed to create token: %v", err)
+		token, errMsg, err := createToken("user")
+		if err != nil && errMsg != "" {
+			t.Fatalf("Failed to create token: %v: %v", errMsg, err)
 		}
 
 		err = TestAuthService.DB.Model(&models.Token{}).Where("token = ?", token).Update("expiry", time.Now().Add(-1*time.Hour)).Error
@@ -176,9 +177,9 @@ func TestVerifyTokenInDb(t *testing.T) {
 }
 
 func createToken(username, password string) (string, error) {
-	result, err := TestAuthService.CreateJWT(username, password)
+	result, errMsg, err := TestAuthService.CreateJWT(username, password)
 	if err != nil {
-		logger.Error("Failed to create JWT", zap.Error(err))
+		logger.Error("Failed to create JWT", zap.String("message: %v", errMsg), zap.Error(err))
 		return "", err
 	}
 	return result["token"].(string), nil
@@ -269,9 +270,9 @@ func TestGetUserPermissions(t *testing.T) {
 			t.Fatalf("Failed to create admin token: %v", err)
 		}
 
-		permissions, err := TestAuthService.GetUserPermissions(adminToken)
-		if err != nil {
-			t.Fatalf("Failed to get admin permissions: %v", err)
+		permissions, errMsg, err := TestAuthService.GetUserPermissions(adminToken)
+		if err != nil && errMsg != "" {
+			t.Fatalf("Failed to get admin permissions: %v: %v", errMsg, err)
 		}
 
 		if len(permissions) != 1 || permissions[0] != "all" {
@@ -285,9 +286,9 @@ func TestGetUserPermissions(t *testing.T) {
 			t.Fatalf("Failed to create user token: %v", err)
 		}
 
-		permissions, err := TestAuthService.GetUserPermissions(userToken)
-		if err != nil {
-			t.Fatalf("Failed to get user permissions: %v", err)
+		permissions, errMsg, err := TestAuthService.GetUserPermissions(userToken)
+		if err != nil && errMsg != "" {
+			t.Fatalf("Failed to get user permissions: %v: %v", errMsg, err)
 		}
 
 		expectedPermissions := []string{"read", "write", "delete"}
@@ -330,9 +331,9 @@ func TestGetUserPermissions(t *testing.T) {
 			t.Fatalf("Failed to create user token: %v", err)
 		}
 
-		permissions, err := TestAuthService.GetUserPermissions(userToken)
+		permissions, errMsg, err := TestAuthService.GetUserPermissions(userToken)
 		if err != nil {
-			t.Fatalf("Failed to get user permissions: %v", err)
+			t.Fatalf("Failed to get user permissions: %v: %v", errMsg, err)
 		}
 
 		expectedPermissions := []string{"read"}
@@ -342,8 +343,8 @@ func TestGetUserPermissions(t *testing.T) {
 	})
 
 	t.Run("Invalid Token", func(t *testing.T) {
-		_, err := TestAuthService.GetUserPermissions("invalid_token")
-		if err == nil {
+		_, errMsg, err := TestAuthService.GetUserPermissions("invalid_token")
+		if errMsg == "" && err == nil {
 			t.Error("Expected error for invalid token, got nil")
 		}
 	})

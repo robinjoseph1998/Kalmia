@@ -14,12 +14,13 @@ import (
 )
 
 func GetDocumentations(service *services.DocService, w http.ResponseWriter, r *http.Request) {
-	docs, err := service.GetDocumentations()
+	docs, errMsg, err := service.GetDocumentations()
 
-	if err != nil {
+	if err != nil && errMsg != "" {
 		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{
 			"status":  "error",
-			"message": err.Error(),
+			"message": errMsg,
+			"error":   err.Error(),
 		})
 		return
 	}
@@ -38,12 +39,13 @@ func GetDocumentation(service *services.DocService, w http.ResponseWriter, r *ht
 		return
 	}
 
-	doc, err := service.GetDocumentation(req.ID)
+	doc, errMsg, err := service.GetDocumentation(req.ID)
 
 	if err != nil {
 		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{
 			"status":  "error",
-			"message": err.Error(),
+			"message": errMsg,
+			"error":   err.Error(),
 		})
 		return
 	}
@@ -205,10 +207,10 @@ func DeleteDocumentation(service *services.DocService, w http.ResponseWriter, r 
 		return
 	}
 
-	err = service.DeleteDocumentation(req.ID)
+	errMsg, err := service.DeleteDocumentation(req.ID)
 
-	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+	if err != nil && errMsg != "" {
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -227,10 +229,10 @@ func CreateDocumentationVersion(service *services.DocService, w http.ResponseWri
 		return
 	}
 
-	err = service.CreateDocumentationVersion(req.OriginalDocID, req.NewVersion)
+	errMsg, err := service.CreateDocumentationVersion(req.OriginalDocID, req.NewVersion)
 
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -238,10 +240,10 @@ func CreateDocumentationVersion(service *services.DocService, w http.ResponseWri
 }
 
 func GetPages(service *services.DocService, w http.ResponseWriter, r *http.Request) {
-	pages, err := service.GetPages()
+	pages, errMsg, err := service.GetPages()
 
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -259,10 +261,10 @@ func GetPage(service *services.DocService, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	page, err := service.GetPage(req.ID)
+	page, errMsg, err := service.GetPage(req.ID)
 
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -318,10 +320,10 @@ func CreatePage(services *services.ServiceRegistry, w http.ResponseWriter, r *ht
 		page.Order = req.Order
 	}
 
-	err = services.DocService.CreatePage(&page)
+	errMsg, err := services.DocService.CreatePage(&page)
 
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -355,9 +357,9 @@ func EditPage(services *services.ServiceRegistry, w http.ResponseWriter, r *http
 		return
 	}
 
-	err = services.DocService.EditPage(user, req.ID, req.Title, req.Slug, req.Content, req.Order, req.PageGroupId)
+	errMsg, err := services.DocService.EditPage(user, req.ID, req.Title, req.Slug, req.Content, req.Order, req.PageGroupId)
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -374,14 +376,14 @@ func DeletePage(service *services.DocService, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	err = service.DeletePage(req.ID)
-	if err != nil {
-		switch err.Error() {
+	errMsg, err := service.DeletePage(req.ID)
+	if err != nil && errMsg != "" {
+		switch errMsg {
 		case "page_not_found":
 			SendJSONResponse(http.StatusNotFound, w, map[string]string{"status": "error", "message": "Page not found"})
 		default:
 			logger.Error(err.Error())
-			SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+			SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		}
 		return
 	}
@@ -390,10 +392,10 @@ func DeletePage(service *services.DocService, w http.ResponseWriter, r *http.Req
 }
 
 func GetPageGroups(service *services.DocService, w http.ResponseWriter, r *http.Request) {
-	pageGroups, err := service.GetPageGroups()
-	if err != nil {
+	pageGroups, errMsg, err := service.GetPageGroups()
+	if err != nil && errMsg != "" {
 		logger.Error(err.Error())
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -410,14 +412,14 @@ func GetPageGroup(service *services.DocService, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	pageGroup, err := service.GetPageGroup(req.ID)
-	if err != nil {
+	pageGroup, errMsg, err := service.GetPageGroup(req.ID)
+	if err != nil && errMsg != "" {
 		switch err.Error() {
 		case "page_group_not_found":
-			SendJSONResponse(http.StatusNotFound, w, map[string]string{"status": "error", "message": "Page group not found"})
+			SendJSONResponse(http.StatusNotFound, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		default:
 			logger.Error(err.Error())
-			SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+			SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		}
 		return
 	}
@@ -470,10 +472,10 @@ func CreatePageGroup(services *services.ServiceRegistry, w http.ResponseWriter, 
 		pageGroup.Order = req.Order
 	}
 
-	_, err = services.DocService.CreatePageGroup(&pageGroup)
+	_, errMsg, err := services.DocService.CreatePageGroup(&pageGroup)
 
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -506,9 +508,13 @@ func EditPageGroup(services *services.ServiceRegistry, w http.ResponseWriter, r 
 		return
 	}
 
-	err = services.DocService.EditPageGroup(user, req.ID, req.Name, req.DocumentationID, req.ParentID, req.Order)
-	if err != nil {
+	errMsg, err := services.DocService.EditPageGroup(user, req.ID, req.Name, req.DocumentationID, req.ParentID, req.Order)
+	if err != nil && errMsg != "error" {
 		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		return
+	}
+	if err != nil && errMsg == "error" {
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg})
 		return
 	}
 

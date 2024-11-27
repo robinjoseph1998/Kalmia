@@ -96,10 +96,10 @@ func DeleteUser(authService *services.AuthService, w http.ResponseWriter, r *htt
 }
 
 func GetUsers(authService *services.AuthService, w http.ResponseWriter, r *http.Request) {
-	users, err := authService.GetUsers()
+	users, errMsg, err := authService.GetUsers()
 
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 
@@ -191,10 +191,10 @@ func CreateJWT(authService *services.AuthService, w http.ResponseWriter, r *http
 		return
 	}
 
-	tokenDetails, err := authService.CreateJWT(req.Username, req.Password)
+	tokenDetails, errMsg, err := authService.CreateJWT(req.Username, req.Password)
 
 	if err != nil {
-		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": err.Error()})
+		SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"status": "error", "message": errMsg, "error": err.Error()})
 		return
 	}
 

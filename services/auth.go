@@ -18,30 +18,30 @@ func NewAuthService(db *gorm.DB) *AuthService {
 	return &AuthService{DB: db}
 }
 
-func (service *AuthService) GetUsers() ([]models.User, error) {
+func (service *AuthService) GetUsers() ([]models.User, string, error) {
 	var users []models.User
 
 	if err := service.DB.Find(&users).Error; err != nil {
-		return nil, fmt.Errorf("failed_to_get_users")
+		return nil, "failed_to_get_users", err
 	}
 
-	return users, nil
+	return users, "", nil
 }
 
-func (service *AuthService) CreateJWT(username, password string) (map[string]interface{}, error) {
+func (service *AuthService) CreateJWT(username, password string) (map[string]interface{}, string, error) {
 	var user models.User
 
 	if err := service.DB.Where("username = ?", username).First(&user).Error; err != nil {
-		return nil, fmt.Errorf("user_not_found")
+		return nil, "user_not_found", err
 	}
 
 	if !utils.CheckPasswordHash(password, user.Password) {
-		return nil, fmt.Errorf("invalid_password")
+		return nil, "invalid_password", fmt.Errorf("wrong_password")
 	}
 
 	tokenString, expiry, err := utils.GenerateJWTAccessToken(user.ID, user.Username, user.Email, user.Photo, user.Admin, user.Permissions)
 	if err != nil {
-		return nil, fmt.Errorf("failed_to_generate_jwt")
+		return nil, "failed_to_generate_jwt", err
 	}
 
 	newToken := models.Token{
@@ -51,13 +51,13 @@ func (service *AuthService) CreateJWT(username, password string) (map[string]int
 	}
 
 	if err := service.DB.Create(&newToken).Error; err != nil {
-		return nil, fmt.Errorf("failed_to_create_token")
+		return nil, "failed_to_create_token", err
 	}
 
 	claims, err := utils.ValidateJWT(tokenString)
 	if err != nil {
 		service.DB.Where("token = ?", tokenString).Delete(&models.Token{})
-		return nil, fmt.Errorf("invalid_jwt_created")
+		return nil, "invalid_jwt_created", err
 	}
 
 	return map[string]interface{}{
@@ -69,7 +69,7 @@ func (service *AuthService) CreateJWT(username, password string) (map[string]int
 		"userId":      claims.UserId,
 		"admin":       user.Admin,
 		"permissions": claims.Permissions,
-	}, nil
+	}, "", nil
 }
 
 func (service *AuthService) VerifyTokenInDb(token string, needAdmin bool) bool {
@@ -116,19 +116,19 @@ func (service *AuthService) IsTokenAdmin(token string) bool {
 	return user.Admin
 }
 
-func (service *AuthService) GetUserPermissions(token string) ([]string, error) {
+func (service *AuthService) GetUserPermissions(token string) ([]string, string, error) {
 	user, err := service.GetUserFromToken(token)
 	if err != nil {
-		return nil, err
+		return nil, "failed_to_get_user", err
 	}
 
 	var permissions []string
 	err = json.Unmarshal([]byte(user.Permissions), &permissions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse permissions: %w", err)
+		return nil, "failed to parse permissions", err
 	}
 
-	return permissions, nil
+	return permissions, "", nil
 }
 
 func (service *AuthService) GetUserFromToken(token string) (models.User, error) {
@@ -148,11 +148,11 @@ func (service *AuthService) GetUserFromToken(token string) (models.User, error) 
 	return user, nil
 }
 
-func (service *AuthService) CreateUser(username, email, password string, admin bool, permissions []string) error {
+func (service *AuthService) CreateUser(username, email, password string, admin bool, permissions []string) (string, error) {
 	hashedPassword, err := utils.HashPassword(password)
 
 	if err != nil {
-		return fmt.Errorf("failed_to_hash_password")
+		return "failed_to_hash_password", err
 	}
 
 	if len(permissions) == 0 {
@@ -162,7 +162,7 @@ func (service *AuthService) CreateUser(username, email, password string, admin b
 	jsonPermissions, err := json.Marshal(permissions)
 
 	if err != nil {
-		return fmt.Errorf("failed_to_marshal_permissions")
+		return "failed_to_marshal_permissions", err
 	}
 
 	user := models.User{
@@ -174,17 +174,17 @@ func (service *AuthService) CreateUser(username, email, password string, admin b
 	}
 
 	if err := service.DB.Create(&user).Error; err != nil {
-		return fmt.Errorf("failed_to_create_user")
+		return "failed_to_create_user", err
 	}
 
-	return nil
+	return "", nil
 }
 
-func (service *AuthService) EditUser(id uint, username, email, password, photo string, admin int, permissions []string) error {
+func (service *AuthService) EditUser(id uint, username, email, password, photo string, admin int, permissions []string) (string, error) {
 	var user models.User
 
 	if err := service.DB.Where("id = ?", id).First(&user).Error; err != nil {
-		return fmt.Errorf("user_not_found")
+		return "user_not_found", err
 	}
 
 	if username != "" {
@@ -198,7 +198,7 @@ func (service *AuthService) EditUser(id uint, username, email, password, photo s
 	if password != "" {
 		hashedPassword, err := utils.HashPassword(password)
 		if err != nil {
-			return fmt.Errorf("failed_to_hash_password")
+			return "failed_to_hash_password", err
 		}
 
 		user.Password = hashedPassword
@@ -218,53 +218,53 @@ func (service *AuthService) EditUser(id uint, username, email, password, photo s
 		jsonPermissions, err := json.Marshal(permissions)
 
 		if err != nil {
-			return fmt.Errorf("failed_to_marshal_permissions")
+			return "failed_to_marshal_permissions", err
 		}
 
 		user.Permissions = string(jsonPermissions)
 	}
 
 	if err := service.DB.Save(&user).Error; err != nil {
-		return fmt.Errorf("failed_to_edit_user")
+		return "failed_to_edit_user", err
 	}
 
-	return nil
+	return "", nil
 }
 
-func (service *AuthService) DeleteUser(username string) error {
+func (service *AuthService) DeleteUser(username string) (string, error) {
 	var user models.User
 
 	if err := service.DB.Where("username = ?", username).First(&user).Error; err != nil {
-		return fmt.Errorf("user_not_found")
+		return "user_not_found", err
 	}
 
 	if err := service.DB.Delete(&user).Error; err != nil {
-		return fmt.Errorf("failed_to_delete_user")
+		return "failed_to_delete_user", err
 	}
 
-	return nil
+	return "", nil
 }
 
-func (service *AuthService) GetUser(id uint) (models.User, error) {
+func (service *AuthService) GetUser(id uint) (models.User, string, error) {
 	var user models.User
 
 	if err := service.DB.Where("id = ?", id).First(&user).Error; err != nil {
-		return models.User{}, fmt.Errorf("user_not_found")
+		return models.User{}, "user_not_found", err
 	}
 
-	return user, nil
+	return user, "", nil
 }
 
 func (service *AuthService) CreateJWTFromEmail(email string) (string, error) {
 	var user models.User
 
 	if err := service.DB.Where("email = ?", email).First(&user).Error; err != nil {
-		return "", fmt.Errorf("user_not_found")
+		return "", fmt.Errorf("user_not_found: %w", err)
 	}
 
 	tokenString, expiry, err := utils.GenerateJWTAccessToken(user.ID, user.Username, user.Email, user.Photo, user.Admin, user.Permissions)
 	if err != nil {
-		return "", fmt.Errorf("failed_to_generate_jwt")
+		return "", fmt.Errorf("failed_to_generate_jwt: %w", err)
 	}
 
 	newToken := models.Token{
@@ -274,67 +274,67 @@ func (service *AuthService) CreateJWTFromEmail(email string) (string, error) {
 	}
 
 	if err := service.DB.Create(&newToken).Error; err != nil {
-		return "", fmt.Errorf("failed_to_create_token")
+		return "", fmt.Errorf("failed_to_create_token: %w", err)
 	}
 
 	_, err = utils.ValidateJWT(tokenString)
 	if err != nil {
 		service.DB.Where("token = ?", tokenString).Delete(&models.Token{})
-		return "", fmt.Errorf("invalid_jwt_created")
+		return "", fmt.Errorf("invalid_jwt_created: %w", err)
 	}
 
 	return tokenString, nil
 }
 
-func (service *AuthService) RefreshJWT(token string) (string, error) {
+func (service *AuthService) RefreshJWT(token string) (string, string, error) {
 	claims, err := utils.ValidateJWT(token)
 	if err != nil {
-		return "", fmt.Errorf("invalid_jwt")
+		return "", "invalid_jwt", err
 	}
 
 	userId, err := utils.StringToUint(claims.UserId)
 	if err != nil {
-		return "", fmt.Errorf("failed_to_convert_user_id")
+		return "", "failed_to_convert_user_id", err
 	}
 
 	permissionsJSON, err := json.Marshal(claims.Permissions)
 
 	if err != nil {
-		return "", fmt.Errorf("failed_to_marshal_permissions")
+		return "", "failed_to_marshal_permissions", err
 	}
 
 	newToken, expiry, err := utils.GenerateJWTAccessToken(userId, claims.Username, claims.Email, claims.Photo, claims.IsAdmin, string(permissionsJSON))
 	if err != nil {
-		return "", fmt.Errorf("failed_to_generate_new_jwt")
+		return "", "failed_to_generate_new_jwt", err
 	}
 
 	var tokenRecord models.Token
 
 	if err := service.DB.Where("token = ?", token).First(&tokenRecord).Error; err != nil {
-		return "", fmt.Errorf("token_not_found")
+		return "", "token_not_found", err
 	}
 
 	tokenRecord.Token = newToken
 	tokenRecord.Expiry = expiry
 
 	if err := service.DB.Save(&tokenRecord).Error; err != nil {
-		return "", fmt.Errorf("failed_to_update_token")
+		return "", "failed_to_update_token", err
 	}
 
-	return newToken, nil
+	return newToken, "", nil
 }
 
-func (service *AuthService) ValidateJWT(token string) (map[string]interface{}, error) {
+func (service *AuthService) ValidateJWT(token string) (map[string]interface{}, string, error) {
 	var tokenRecord models.Token
 
 	if err := service.DB.Where("token = ?", token).First(&tokenRecord).Error; err != nil {
-		return nil, fmt.Errorf("token_not_found")
+		return nil, "token_not_found", err
 	}
 
 	claims, err := utils.ValidateJWT(token)
 
 	if err != nil {
-		return nil, fmt.Errorf("invalid_jwt")
+		return nil, "invalid_jwt", err
 	}
 
 	return map[string]interface{}{
@@ -345,34 +345,34 @@ func (service *AuthService) ValidateJWT(token string) (map[string]interface{}, e
 		"expiry":   claims.ExpiresAt.Time.String(),
 		"admin":    claims.IsAdmin,
 		"userId":   claims.UserId,
-	}, nil
+	}, "", nil
 }
 
-func (service *AuthService) RevokeJWT(token string) error {
+func (service *AuthService) RevokeJWT(token string) (string, error) {
 	_, err := utils.ValidateJWT(token)
 
 	if err != nil {
-		return fmt.Errorf("invalid_jwt")
+		return "invalid_jwt", err
 	}
 
 	var tokenRecord models.Token
 
 	if err := service.DB.Where("token = ?", token).First(&tokenRecord).Error; err != nil {
-		return fmt.Errorf("token_not_found")
+		return "token_not_found", err
 	}
 
 	if err := service.DB.Delete(&tokenRecord).Error; err != nil {
-		return fmt.Errorf("failed_to_delete_token")
+		return "failed_to_delete_token", err
 	}
 
-	return nil
+	return "", nil
 }
 
 func (service *AuthService) FindUserByEmail(email string) (models.User, error) {
 	var user models.User
 
 	if err := service.DB.Where("email = ?", email).First(&user).Error; err != nil {
-		return models.User{}, fmt.Errorf("user_not_found")
+		return models.User{}, fmt.Errorf("user_not_found: %w", err)
 	}
 
 	return user, nil

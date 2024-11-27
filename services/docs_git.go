@@ -17,9 +17,9 @@ import (
 )
 
 func (service *DocService) GitDeploy(docId uint) error {
-	doc, err := service.GetDocumentation(docId)
-	if err != nil {
-		return fmt.Errorf("failed to get documentation: %v", err)
+	doc, errMsg, err := service.GetDocumentation(docId)
+	if err != nil && errMsg != "" {
+		return fmt.Errorf("failed to get documentation: %v: %v", errMsg, err)
 	}
 
 	if doc.GitRepo == "" {

@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (service *DocService) GetDocumentations() ([]models.Documentation, error) {
+func (service *DocService) GetDocumentations() ([]models.Documentation, string, error) {
 	var documentations []models.Documentation
 
 	db := service.DB
@@ -45,24 +45,24 @@ func (service *DocService) GetDocumentations() ([]models.Documentation, error) {
 		"URL", "OrganizationName", "LanderDetails", "ProjectName", "BaseURL", "RequireAuth",
 		"GitRepo", "GitEmail", "GitUser", "GitPassword", "GitBranch").
 		Find(&documentations).Error; err != nil {
-		return nil, fmt.Errorf("failed_to_get_documentations")
+		return nil, "failed_to_get_documentations", err
 	}
 
-	return documentations, nil
+	return documentations, "", nil
 }
 
-func (service *DocService) GetDocumentation(id uint) (models.Documentation, error) {
+func (service *DocService) GetDocumentation(id uint) (models.Documentation, string, error) {
 	var documentation models.Documentation
 	var count int64
 
 	db := service.DB
 
 	if err := db.Model(&models.Documentation{}).Where("id = ?", id).Count(&count).Error; err != nil {
-		return models.Documentation{}, fmt.Errorf("documentation_not_found")
+		return models.Documentation{}, "documentation_not_found", err
 	}
 
 	if count == 0 {
-		return models.Documentation{}, fmt.Errorf("documentation_not_found")
+		return models.Documentation{}, "error", fmt.Errorf("documentation_not_found")
 	}
 
 	if err := db.Preload("Author", func(db *gorm.DB) *gorm.DB {
@@ -92,10 +92,10 @@ func (service *DocService) GetDocumentation(id uint) (models.Documentation, erro
 		"BaseURL", "URL", "OrganizationName", "LanderDetails", "ProjectName", "ClonedFrom", "RequireAuth",
 		"GitRepo", "GitEmail", "GitUser", "GitPassword", "GitBranch").
 		Find(&documentation).Error; err != nil {
-		return models.Documentation{}, fmt.Errorf("failed_to_get_documentation")
+		return models.Documentation{}, "failed_to_get_documentation", err
 	}
 
-	return documentation, nil
+	return documentation, "", nil
 }
 
 func (service *DocService) IsDocIdValid(id uint) bool {
@@ -123,11 +123,11 @@ func (service *DocService) GetDocIdFromBaseURL(baseUrl string) (uint, error) {
 	return doc.ID, nil
 }
 
-func (service *DocService) GetChildrenOfDocumentation(id uint) ([]uint, error) {
-	docs, err := service.GetDocumentations()
+func (service *DocService) GetChildrenOfDocumentation(id uint) ([]uint, string, error) {
+	docs, errMsg, err := service.GetDocumentations()
 
-	if err != nil {
-		return nil, err
+	if err != nil && errMsg != "" {
+		return nil, errMsg, err
 	}
 
 	var children []uint
@@ -140,7 +140,7 @@ func (service *DocService) GetChildrenOfDocumentation(id uint) ([]uint, error) {
 		}
 	}
 
-	return children, nil
+	return children, "", nil
 }
 
 func (service *DocService) GetAllVersions(id uint) (string, []string, error) {
@@ -199,25 +199,25 @@ func (service *DocService) GetAllVersions(id uint) (string, []string, error) {
 	return latestVersion, versions, nil
 }
 
-func (service *DocService) CreateDocumentation(documentation *models.Documentation, user models.User) error {
+func (service *DocService) CreateDocumentation(documentation *models.Documentation, user models.User) (string, error) {
 	db := service.DB
 
 	var count int64
 
 	if err := db.Model(&models.Documentation{}).Where("name = ?", documentation.Name).Count(&count).Error; err != nil {
-		return fmt.Errorf("failed_to_check_documentation_name")
+		return "failed_to_check_documentation_name", err
 	}
 
 	if count > 0 {
-		return fmt.Errorf("documentation_name_already_exists")
+		return "error", fmt.Errorf("documentation_name_already_exists")
 	}
 
 	if !utils.IsBaseURLValid(documentation.BaseURL) {
-		return fmt.Errorf("invalid_base_url")
+		return "error", fmt.Errorf("invalid_base_url")
 	}
 
 	if err := db.Create(documentation).Error; err != nil {
-		return fmt.Errorf("failed_to_create_documentation")
+		return "failed_to_create_documentation", err
 	}
 
 	introPageContent := `[{"id":"fa01e096-3187-4628-8f1e-77728cee3aa6","type":"heading","props":{"textColor":"default","backgroundColor":"default","textAlignment":"left","level":1},"content":[{"type":"text","text":"Introduction","styles":{}}],"children":[]},{"id":"64a26e8f-7733-4f8a-b3fb-f2c9a770d727","type":"paragraph","props":{"textColor":"default","backgroundColor":"default","textAlignment":"left"},"content":[{"type":"text","text":"Welcome to the ","styles":{}},{"type":"text","text":"introductory page","styles":{"bold":true}},{"type":"text","text":" of this documentation!","styles":{}}],"children":[]},{"id":"90f28c74-6195-4074-8861-35b82b9bfb1c","type":"paragraph","props":{"textColor":"default","backgroundColor":"default","textAlignment":"left"},"content":[],"children":[]}]`
@@ -236,7 +236,7 @@ func (service *DocService) CreateDocumentation(documentation *models.Documentati
 	}
 
 	if err := db.Create(&introPage).Error; err != nil {
-		return fmt.Errorf("failed_to_create_documentation_intro_page")
+		return "failed_to_create_documentation_intro_page", err
 	}
 
 	err := service.InitRsPress(documentation.ID)
@@ -246,25 +246,25 @@ func (service *DocService) CreateDocumentation(documentation *models.Documentati
 		db.Delete(&documentation)
 		db.Delete(&introPage)
 
-		return fmt.Errorf("failed_to_init_rspress")
+		return "failed_to_init_rspress", err
 	}
 
 	err = service.AddBuildTrigger(documentation.ID)
 
 	if err != nil {
-		return fmt.Errorf("failed_to_add_build_trigger")
+		return "failed_to_add_build_trigger", err
 	}
 
-	return nil
+	return "", nil
 }
 
 func (service *DocService) EditDocumentation(user models.User, id uint, name, description, version, favicon, metaImage, navImage,
 	navImageDark, customCSS, footerLabelLinks, moreLabelLinks, copyrightText, url,
 	organizationName, projectName, baseURL, landerDetails string, requireAuth bool,
-	gitRepo string, gitBranch string, gitUser string, gitPassword string, gitEmail string) error {
+	gitRepo string, gitBranch string, gitUser string, gitPassword string, gitEmail string) (string, error) {
 	tx := service.DB.Begin()
 	if !utils.IsBaseURLValid(baseURL) {
-		return fmt.Errorf("invalid_base_url")
+		return "error", fmt.Errorf("invalid_base_url")
 	}
 
 	updateDoc := func(doc *models.Documentation, isTarget bool) error {
@@ -306,7 +306,7 @@ func (service *DocService) EditDocumentation(user models.User, id uint, name, de
 		}
 
 		if err := tx.Save(doc).Error; err != nil {
-			return fmt.Errorf("failed_to_update_documentation")
+			return fmt.Errorf("failed_to_update_documentation: %w", err)
 		}
 		return nil
 	}
@@ -314,19 +314,19 @@ func (service *DocService) EditDocumentation(user models.User, id uint, name, de
 	var targetDoc models.Documentation
 	if err := tx.Preload("Editors").First(&targetDoc, id).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("documentation_not_found")
+		return "documentation_not_found", err
 	}
 
 	if err := updateDoc(&targetDoc, true); err != nil {
 		tx.Rollback()
-		return err
+		return "error", err
 	}
 
 	var updateRelatedDocs func(uint) error
 	updateRelatedDocs = func(docID uint) error {
 		var relatedDocs []models.Documentation
 		if err := tx.Preload("Editors").Where("id = ? OR cloned_from = ?", docID, docID).Find(&relatedDocs).Error; err != nil {
-			return fmt.Errorf("failed_to_fetch_related_documentations")
+			return fmt.Errorf("failed_to_fetch_related_documentations: %w", err)
 		}
 
 		for i := range relatedDocs {
@@ -344,7 +344,7 @@ func (service *DocService) EditDocumentation(user models.User, id uint, name, de
 
 	if err := updateRelatedDocs(targetDoc.ID); err != nil {
 		tx.Rollback()
-		return err
+		return "error", err
 	}
 
 	if targetDoc.ClonedFrom != nil {
@@ -353,25 +353,25 @@ func (service *DocService) EditDocumentation(user models.User, id uint, name, de
 			var parentDoc models.Documentation
 			if err := tx.Preload("Editors").First(&parentDoc, currentID).Error; err != nil {
 				tx.Rollback()
-				return fmt.Errorf("parent_documentation_not_found")
+				return "parent_documentation_not_found", err
 			}
 			if err := updateDoc(&parentDoc, false); err != nil {
 				tx.Rollback()
-				return err
+				return "error", err
 			}
 			currentID = parentDoc.ClonedFrom
 		}
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		return fmt.Errorf("failed_to_commit_changes")
+		return "failed_to_commit_changes", err
 	}
 
 	rootID := id
 	for {
 		var doc models.Documentation
 		if err := service.DB.First(&doc, rootID).Error; err != nil {
-			return fmt.Errorf("failed_to_find_root_document")
+			return "failed_to_find_root_document", err
 		}
 		if doc.ClonedFrom == nil {
 			break
@@ -380,116 +380,116 @@ func (service *DocService) EditDocumentation(user models.User, id uint, name, de
 	}
 
 	if err := service.AddBuildTrigger(rootID); err != nil {
-		return fmt.Errorf("failed_to_add_build_trigger")
+		return "failed_to_add_build_trigger", err
 	}
 
-	return nil
+	return "", nil
 }
 
-func (service *DocService) DeleteDocumentation(id uint) error {
-	doc, err := service.GetDocumentation(id)
-	if err != nil {
-		return fmt.Errorf("failed_to_get_documentation")
+func (service *DocService) DeleteDocumentation(id uint) (string, error) {
+	doc, errMsg, err := service.GetDocumentation(id)
+	if err != nil && errMsg != "" {
+		return "failed_to_get_documentation", err
 	}
 
 	var count int64
 	if err := service.DB.Model(&models.Documentation{}).Where("cloned_from = ?", id).Count(&count).Error; err != nil {
-		return fmt.Errorf("failed_to_check_cloned_documentations")
+		return "failed_to_check_cloned_documentations", err
 	}
 
 	parentId, err := service.GetRootParentID(id)
 	if err != nil {
-		return fmt.Errorf("failed_to_get_parent_id")
+		return "failed_to_get_parent_id", err
 	}
 
 	if count > 0 {
 		if parentId == id {
-			return fmt.Errorf("root_parent_cant_be_deleted_as_it_has_children")
+			return "root_parent_cant_be_deleted_as_it_has_children", err
 		}
 		var childDocs []models.Documentation
 		if err := service.DB.Where("cloned_from = ?", id).Find(&childDocs).Error; err != nil {
-			return fmt.Errorf("failed_to_get_child_documentations")
+			return "failed_to_get_child_documentations", err
 		}
 		for _, childDoc := range childDocs {
 			childDoc.ClonedFrom = doc.ClonedFrom
 			if err := service.DB.Save(&childDoc).Error; err != nil {
-				return fmt.Errorf("failed_to_update_child_documentation")
+				return "failed_to_update_child_documentation", err
 			}
 		}
 	}
 
 	tx := service.DB.Begin()
 	if tx.Error != nil {
-		return fmt.Errorf("failed_to_start_transaction")
+		return "failed_to_start_transaction", tx.Error
 	}
 
 	var pageGroups []models.PageGroup
 	if err := tx.Where("documentation_id = ?", id).Find(&pageGroups).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed_to_fetch_page_groups: %v", err)
+		return "failed_to_fetch_page_groups", err
 	}
 
 	for _, pg := range pageGroups {
 		if err := tx.Model(&pg).Association("Editors").Clear(); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("failed_to_clear_pagegroup_editors_association: %v", err)
+			return "failed_to_clear_pagegroup_editors_association", err
 		}
 	}
 
 	var pages []models.Page
 	if err := tx.Where("documentation_id = ?", id).Find(&pages).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed_to_fetch_pages: %v", err)
+		return "failed_to_fetch_pages", err
 	}
 
 	for _, page := range pages {
 		if err := tx.Model(&page).Association("Editors").Clear(); err != nil {
 			tx.Rollback()
-			return fmt.Errorf("failed_to_clear_page_editors_association: %v", err)
+			return "failed_to_clear_page_editors_association", err
 		}
 	}
 
 	if err := tx.Where("documentation_id = ?", id).Delete(&models.PageGroup{}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed_to_delete_page_groups: %v", err)
+		return "failed_to_delete_page_groups", err
 	}
 
 	if err := tx.Where("documentation_id = ?", id).Delete(&models.Page{}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed_to_delete_pages: %v", err)
+		return "failed_to_delete_pages", err
 	}
 
 	if err := tx.Model(&models.Documentation{ID: id}).Association("Editors").Clear(); err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed_to_clear_documentation_editors_association: %v", err)
+		return "failed_to_clear_documentation_editors_association", err
 	}
 
 	if err := tx.Delete(&models.Documentation{ID: id}).Error; err != nil {
 		tx.Rollback()
-		return fmt.Errorf("failed_to_delete_documentation: %v", err)
+		return "failed_to_delete_documentation", err
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		return fmt.Errorf("failed_to_commit_changes: %v", err)
+		return "failed_to_commit_changes", err
 	}
 
 	err = service.AddBuildTrigger(parentId)
 	if err != nil {
-		return fmt.Errorf("failed_to_add_build_trigger: %v", err)
+		return "failed_to_add_build_trigger", err
 	}
 
-	return nil
+	return "", nil
 }
 
-func (service *DocService) CreateDocumentationVersion(originalDocId uint, newVersion string) error {
+func (service *DocService) CreateDocumentationVersion(originalDocId uint, newVersion string) (string, error) {
 	var originalDoc models.Documentation
 	if err := service.DB.Preload("PageGroups.Pages").Preload("Pages").First(&originalDoc, originalDocId).Error; err != nil {
-		return fmt.Errorf("documentation_not_found")
+		return "documentation_not_found", err
 	}
 
 	ancestors, err := service.getAncestorDocuments(originalDoc.ID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch ancestor documents: %w", err)
+		return "failed to fetch ancestor documents", err
 	}
 
 	newDoc := models.Documentation{
@@ -523,12 +523,12 @@ func (service *DocService) CreateDocumentationVersion(originalDocId uint, newVer
 
 	err = service.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&newDoc).Error; err != nil {
-			return fmt.Errorf("failed_to_create_documentation")
+			return fmt.Errorf("failed_to_create_documentation: %w", err)
 		}
 
 		for _, editor := range originalDoc.Editors {
 			if err := tx.Model(&newDoc).Association("Editors").Append(&editor); err != nil {
-				return fmt.Errorf("failed_to_add_editor")
+				return fmt.Errorf("failed_to_add_editor: %w", err)
 			}
 		}
 
@@ -553,13 +553,13 @@ func (service *DocService) CreateDocumentationVersion(originalDocId uint, newVer
 				Order:           pg.Order,
 			}
 			if err := tx.Create(&newPG).Error; err != nil {
-				return fmt.Errorf("failed_to_create_page_group")
+				return fmt.Errorf("failed_to_create_page_group: %w", err)
 			}
 			pageGroupMap[pg.ID] = newPG.ID
 
 			for _, editor := range pg.Editors {
 				if err := tx.Model(&newPG).Association("Editors").Append(&editor); err != nil {
-					return fmt.Errorf("failed_to_add_editor")
+					return fmt.Errorf("failed_to_add_editor: %w", err)
 				}
 			}
 
@@ -574,11 +574,11 @@ func (service *DocService) CreateDocumentationVersion(originalDocId uint, newVer
 					Order:           page.Order,
 				}
 				if err := tx.Create(&newPage).Error; err != nil {
-					return fmt.Errorf("failed_to_create_page")
+					return fmt.Errorf("failed_to_create_page: %w", err)
 				}
 				for _, editor := range page.Editors {
 					if err := tx.Model(&newPage).Association("Editors").Append(&editor); err != nil {
-						return fmt.Errorf("failed_to_add_editor")
+						return fmt.Errorf("failed_to_add_editor: %w", err)
 					}
 				}
 			}
@@ -653,16 +653,16 @@ func (service *DocService) CreateDocumentationVersion(originalDocId uint, newVer
 	})
 
 	if err != nil {
-		return err
+		return "error", err
 	}
 
 	err = service.AddBuildTrigger(originalDocId)
 
 	if err != nil {
-		return fmt.Errorf("failed_to_add_build_trigger")
+		return "failed_to_add_build_trigger", err
 	}
 
-	return nil
+	return "", nil
 }
 
 func (service *DocService) getAncestorDocuments(docID uint) ([]models.Documentation, error) {
@@ -689,17 +689,17 @@ func (service *DocService) getAncestorDocuments(docID uint) ([]models.Documentat
 	return ancestors, nil
 }
 
-func (service *DocService) GetParentDocId(docID uint) (uint, error) {
+func (service *DocService) GetParentDocId(docID uint) (uint, string, error) {
 	var doc models.Documentation
 	if err := service.DB.First(&doc, docID).Error; err != nil {
-		return 0, fmt.Errorf("failed_to_get_documentation")
+		return 0, "failed_to_get_documentation", err
 	}
 
 	if doc.ClonedFrom == nil {
-		return 0, nil
+		return 0, "", nil
 	}
 
-	return *doc.ClonedFrom, nil
+	return *doc.ClonedFrom, "", nil
 }
 
 func (service *DocService) GetRootParentID(docID uint) (uint, error) {
@@ -707,7 +707,7 @@ func (service *DocService) GetRootParentID(docID uint) (uint, error) {
 		var doc models.Documentation
 		if err := service.DB.Unscoped().Select("id", "cloned_from").First(&doc, docID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return 0, fmt.Errorf("documentation with ID %d not found", docID)
+				return 0, fmt.Errorf("documentation with ID: %d not found", docID)
 			}
 			return 0, fmt.Errorf("failed to fetch documentation with ID %d: %w", docID, err)
 		}
@@ -727,7 +727,7 @@ func (service *DocService) GetLatestVersion(rootParentID uint) (*models.Document
 		First(&latestDoc).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("no versions found for root parent ID %d", rootParentID)
+			return nil, fmt.Errorf("no versions found for root parent ID: %d", rootParentID)
 		}
 		return nil, fmt.Errorf("failed to fetch latest version for root parent ID %d: %w", rootParentID, err)
 	}
@@ -823,7 +823,7 @@ func (service *DocService) BulkReorderPageOrPageGroup(pageOrder []struct {
 func (service *DocService) GetDocIdByPageId(pageId uint) (uint, error) {
 	var page models.Page
 	if err := service.DB.Select("documentation_id").First(&page, pageId).Error; err != nil {
-		return 0, fmt.Errorf("failed_to_get_page")
+		return 0, fmt.Errorf("failed_to_get_page: %w", err)
 	}
 
 	return page.DocumentationID, nil

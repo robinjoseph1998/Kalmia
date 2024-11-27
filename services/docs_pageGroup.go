@@ -109,7 +109,7 @@ func (service *DocService) recursiveFetchPageGroups(groupMap map[string]interfac
 	}
 }
 
-func (service *DocService) GetPageGroups() ([]map[string]interface{}, error) {
+func (service *DocService) GetPageGroups() ([]map[string]interface{}, string, error) {
 	var pageGroups []models.PageGroup
 	if err := service.DB.Preload("Pages", func(db *gorm.DB) *gorm.DB {
 		return db.Select("ID", "Title", "Slug", "PageGroupID", "Order", "DocumentationID", "CreatedAt", "UpdatedAt", "AuthorID", "LastEditorID", "IsPage")
@@ -120,7 +120,7 @@ func (service *DocService) GetPageGroups() ([]map[string]interface{}, error) {
 		Select("ID", "Name", "DocumentationID", "ParentID", "Order", "CreatedAt", "UpdatedAt", "AuthorID", "LastEditorID", "IsPageGroup").
 		Where("parent_id IS NULL").
 		Find(&pageGroups).Error; err != nil {
-		return nil, fmt.Errorf("failed_to_fetch_page_groups")
+		return nil, "failed_to_fetch_page_groups", err
 	}
 
 	var finalPageGroups []map[string]interface{}
@@ -130,10 +130,10 @@ func (service *DocService) GetPageGroups() ([]map[string]interface{}, error) {
 		finalPageGroups = append(finalPageGroups, groupMap)
 	}
 
-	return finalPageGroups, nil
+	return finalPageGroups, "", nil
 }
 
-func (service *DocService) GetPageGroup(id uint) (map[string]interface{}, error) {
+func (service *DocService) GetPageGroup(id uint) (map[string]interface{}, string, error) {
 	var pageGroup models.PageGroup
 	if err := service.DB.Preload("Pages", func(db *gorm.DB) *gorm.DB {
 		return db.Select("ID", "Title", "Slug", "PageGroupID", "Order", "DocumentationID", "CreatedAt", "UpdatedAt", "AuthorID", "LastEditorID")
@@ -143,25 +143,25 @@ func (service *DocService) GetPageGroup(id uint) (map[string]interface{}, error)
 		Preload("Editors").
 		First(&pageGroup, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("page_group_not_found")
+			return nil, "page_group_not_found", err
 		}
-		return nil, fmt.Errorf("failed_to_fetch_page_group")
+		return nil, "failed_to_fetch_page_group", err
 	}
 
 	groupMap := convertPageGroupToMap(pageGroup)
 	service.recursiveFetchPageGroups(groupMap)
 
-	return groupMap, nil
+	return groupMap, "", nil
 }
 
-func (service *DocService) CreatePageGroup(group *models.PageGroup) (uint, error) {
+func (service *DocService) CreatePageGroup(group *models.PageGroup) (uint, string, error) {
 	if err := service.DB.Create(&group).Error; err != nil {
-		return 0, fmt.Errorf("failed_to_create_page_group")
+		return 0, "failed_to_create_page_group", err
 	}
 
 	docId, err := service.GetDocumentationIDOfPageGroup(group.ID)
 	if err != nil {
-		return 0, fmt.Errorf("failed_to_get_documentation_id")
+		return 0, "failed_to_get_documentation_id", err
 	}
 
 	parentDocId, _ := service.GetRootParentID(docId)
@@ -173,35 +173,36 @@ func (service *DocService) CreatePageGroup(group *models.PageGroup) (uint, error
 	}
 
 	if err != nil {
-		return 0, fmt.Errorf("failed_to_update_write_build")
+		return 0, "failed_to_update_write_build", err
 	}
 
-	return group.ID, nil
+	return group.ID, "", nil
 }
-func (service *DocService) EditPageGroup(user models.User, id uint, name string, documentationID uint, parentID *uint, order *uint) error {
+
+func (service *DocService) EditPageGroup(user models.User, id uint, name string, documentationID uint, parentID *uint, order *uint) (string, error) {
 	var pageGroup models.PageGroup
 	if err := service.DB.First(&pageGroup, id).Error; err != nil {
-		return fmt.Errorf("page_group_not_found")
+		return "page_group_not_found", err
 	}
 
 	var docCount int64
 	if err := service.DB.Model(&models.Documentation{}).Where("id = ?", documentationID).Count(&docCount).Error; err != nil {
-		return fmt.Errorf("failed_to_verify_documentation")
+		return "failed_to_verify_documentation", err
 	}
 	if docCount == 0 {
-		return fmt.Errorf("invalid_documentation_id")
+		return "error", fmt.Errorf("invalid_documentation_id")
 	}
 
 	if parentID != nil {
 		if *parentID == pageGroup.ID {
-			return fmt.Errorf("page_group_cannot_be_its_own_parent")
+			return "error", fmt.Errorf("page_group_cannot_be_its_own_parent")
 		}
 		var parentCount int64
 		if err := service.DB.Model(&models.PageGroup{}).Where("id = ?", parentID).Count(&parentCount).Error; err != nil {
-			return fmt.Errorf("failed_to_verify_parent_page_group")
+			return "error", fmt.Errorf("failed_to_verify_parent_page_group")
 		}
 		if parentCount == 0 {
-			return fmt.Errorf("invalid_parent_page_group_id")
+			return "error", fmt.Errorf("invalid_parent_page_group_id")
 		}
 	}
 
@@ -227,13 +228,13 @@ func (service *DocService) EditPageGroup(user models.User, id uint, name string,
 	}
 
 	if err := service.DB.Save(&pageGroup).Error; err != nil {
-		return fmt.Errorf("failed_to_update_page_group")
+		return "failed_to_update_page_group", err
 	}
 
 	docId, err := service.GetDocumentationIDOfPageGroup(id)
 
 	if err != nil {
-		return fmt.Errorf("failed_to_get_documentation_id")
+		return "failed_to_get_documentation_id", err
 	}
 
 	parentDocId, _ := service.GetRootParentID(docId)
@@ -245,16 +246,16 @@ func (service *DocService) EditPageGroup(user models.User, id uint, name string,
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed_to_update_write_build")
+		return "failed_to_update_write_build", err
 	}
 
-	return nil
+	return "", nil
 }
 
 func (service *DocService) deletePageGroupRecursive(tx *gorm.DB, id uint) error {
 	var pageGroup models.PageGroup
 	if err := tx.Preload("Pages").Preload("Editors").First(&pageGroup, id).Error; err != nil {
-		return fmt.Errorf("page_group_not_found")
+		return fmt.Errorf("page_group_not_found: %v", err)
 	}
 
 	if err := tx.Model(&pageGroup).Association("Editors").Clear(); err != nil {
@@ -329,7 +330,7 @@ func (service *DocService) GetDocumentationIDOfPageGroup(id uint) (uint, error) 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 0, fmt.Errorf("page_group_not_found")
 		}
-		return 0, fmt.Errorf("failed_to_fetch_page_group")
+		return 0, fmt.Errorf("failed_to_fetch_page_group: %v", err)
 	}
 
 	return pageGroup.DocumentationID, nil
@@ -338,20 +339,20 @@ func (service *DocService) GetDocumentationIDOfPageGroup(id uint) (uint, error) 
 func (service *DocService) ReorderPageGroup(id uint, order *uint, parentID *uint) error {
 	var pageGroup models.PageGroup
 	if err := service.DB.First(&pageGroup, id).Error; err != nil {
-		return fmt.Errorf("failed_to_fetch_page_group")
+		return fmt.Errorf("failed_to_fetch_page_group: %v", err)
 	}
 
 	pageGroup.Order = order
 	pageGroup.ParentID = parentID
 
 	if err := service.DB.Save(&pageGroup).Error; err != nil {
-		return fmt.Errorf("failed_to_update_page_group")
+		return fmt.Errorf("failed_to_update_page_group: %v", err)
 	}
 
 	docId, err := service.GetDocumentationIDOfPageGroup(id)
 
 	if err != nil {
-		return fmt.Errorf("failed_to_get_documentation_id")
+		return fmt.Errorf("failed_to_get_documentation_id: %v", err)
 	}
 
 	parentDocId, _ := service.GetRootParentID(docId)
@@ -363,7 +364,7 @@ func (service *DocService) ReorderPageGroup(id uint, order *uint, parentID *uint
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed_to_update_write_build")
+		return fmt.Errorf("failed_to_update_write_build: %v", err)
 	}
 
 	return nil

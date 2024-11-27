@@ -27,7 +27,7 @@ func EnsureAuthenticated(authService *services.AuthService) func(http.Handler) h
 			}
 
 			isAdminToken := authService.IsTokenAdmin(token)
-			permissions, err := authService.GetUserPermissions(token)
+			permissions, _, err := authService.GetUserPermissions(token)
 
 			if err != nil {
 				handlers.SendJSONResponse(http.StatusInternalServerError, w, map[string]string{"error": "user_permissions_error"})

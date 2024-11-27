@@ -24,14 +24,14 @@ func UploadToStorage(file io.Reader, originalFilename, contentType string, parse
 		S3ForcePathStyle: aws.Bool(parsedConfig.S3.UsePathStyle),
 	})
 	if err != nil {
-		return "", fmt.Errorf("error creating AWS session: %v", err)
+		return "", fmt.Errorf("error creating AWS session: %w", err)
 	}
 
 	svc := newS3Client(sess)
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
-		return "", fmt.Errorf("error reading file: %v", err)
+		return "", fmt.Errorf("error reading file: %w", err)
 	}
 
 	ext := filepath.Ext(originalFilename)
@@ -57,7 +57,7 @@ func UploadToStorage(file io.Reader, originalFilename, contentType string, parse
 		ContentType:   aws.String(contentType),
 	})
 	if err != nil {
-		return "", fmt.Errorf("error uploading to S3-compatible storage: %v", err)
+		return "", fmt.Errorf("error uploading to S3-compatible storage: %w", err)
 	}
 
 	publicURL := fmt.Sprintf(parsedConfig.S3.PublicUrlFormat, filename)
